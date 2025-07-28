@@ -3,47 +3,47 @@
     <h1>Grid Surface Warper</h1>
 
     <div class="controls">
-      <label>
-        Grid Spacing:
-        <input type="range" v-model.number="spacing" min="10" max="100" />
-      </label>
+      <v-row>
+        <v-col cols="12" sm="6" md="4">
+          <v-slider
+            v-model="spacing"
+            :min="1"
+            :max="100"
+            :step="1"
+            label="Grid Spacing"
+            thumb-label
+          ></v-slider>
+        </v-col>
+        <v-col cols="12" sm="6" md="4">
+          <v-slider
+            v-model="warpAlpha"
+            :min="1"
+            :max="300"
+            :step="1"
+            label="Warp Alpha"
+            thumb-label
+          ></v-slider>
+        </v-col>
+        <v-col cols="12" sm="6" md="4">
+          <v-slider
+            v-model="warpPointEPS"
+            :min="0.01"
+            :max="1"
+            :step="0.01"
+            label="Warp EPS"
+            thumb-label
+          ></v-slider>
+        </v-col>
+      </v-row>
 
-      <label>
-        Warp Alpha:
-        <input type="range" v-model.number="warpAlpha" min="10" max="200" />
-      </label>
+      <FunctionSelector
+        v-model="selectedFunction"
+        :function-key="selectedFunctionKey"
+        @update:model-value="onFunctionUpdate"
+        class="mb-4"
+      />
 
-      <label>
-        Surface:
-        <select v-model="surfaceType">
-          <option value="sin">Sin Bumps</option>
-          <option value="gaussian">Gaussian Hill</option>
-        </select>
-      </label>
-
-      <template v-if="surfaceType === 'sin'">
-        <label>
-          Sin Multiplier:
-          <input type="range" v-model.number="sinMultiplier" min="0.001" max="0.2" step="0.001" />
-        </label>
-        <label>
-          Sin Amplitude:
-          <input type="range" v-model.number="sinAmplitude" min="0" max="10" />
-        </label>
-      </template>
-
-      <template v-if="surfaceType === 'gaussian'">
-        <label>
-          Gaussian Radius:
-          <input type="range" v-model.number="gaussianRadius" min="1" max="800" />
-        </label>
-        <label>
-          Gaussian Height:
-          <input type="range" v-model.number="gaussianHeight" min="1" max="100" />
-        </label>
-      </template>
-
-      <button @click="draw">Redraw</button>
+      <v-btn color="primary" @click="draw" block class="mt-2">Redraw</v-btn>
     </div>
 
     <canvas ref="canvas" width="800" height="800" />
@@ -51,88 +51,99 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { ref, onMounted, watch } from 'vue';
+import FunctionSelector from './components/FunctionSelector.vue';
 
-const spacing = ref(30)
-const surfaceType = ref('sin')
-const canvas = ref(null)
+// Canvas and grid settings
+const spacing = ref(30);
+const warpAlpha = ref(5);
+const warpPointEPS = ref(0.1);
+const canvas = ref(null);
 
-const sinMultiplier = ref(0.1)
-const sinAmplitude = ref(1)
+// Function selection and parameters
+const selectedFunctionKey = ref('sineRidge');
+const selectedFunction = ref({
+  func: (x, y) => 0,
+  params: {}
+});
 
-const gaussianRadius = ref(200)
-const gaussianHeight = ref(400)
+// Update the function when selection or parameters change
+const onFunctionUpdate = (newFunction) => {
+  selectedFunction.value = newFunction;
+  draw();
+};
 
-const warpAlpha = ref(5)
-
-
-const f_sin = (x, y) => sinAmplitude.value * Math.sin(x * sinMultiplier.value) * Math.cos(y * sinMultiplier.value)
-
-const f_gaussian = (x, y) => {
-  // Change cx and cy to be the center of the canvas
-  const cx = canvas.value.width / 2
-  const cy = canvas.value.height / 2
-  const sigma = gaussianRadius.value / 4
-  const amplitude = gaussianHeight.value
-  const dx = x - cx
-  const dy = y - cy
-  const d2 = dx * dx + dy * dy
-  return amplitude * Math.exp(-d2 / (2 * sigma * sigma))
+// Numerical gradient calculation
+function grad_f(f, x, y, eps = null) {
+  const epsilon = eps || warpPointEPS.value;
+  const dx = (f(x + epsilon, y) - f(x - epsilon, y)) / (2 * epsilon);
+  const dy = (f(x, y + epsilon) - f(x, y - epsilon)) / (2 * epsilon);
+  return [dx, dy];
 }
 
-function grad_f(f, x, y, eps = 1) {
-  const dx = (f(x + eps, y) - f(x - eps, y)) / (2 * eps)
-  const dy = (f(x, y + eps) - f(x, y - eps)) / (2 * eps)
-  return [dx, dy]
-}
-
+// Warp point based on gradient
 function warpPoint(x, y, f) {
-  const alpha = warpAlpha.value
-  const [dx, dy] = grad_f(f, x, y)
-  return [x + alpha * dx, y + alpha * dy]
+  const [dx, dy] = grad_f(f, x, y);
+  return [x + warpAlpha.value * dx, y + warpAlpha.value * dy];
 }
 
+// Main drawing function
 function draw() {
-  const ctx = canvas.value.getContext('2d')
-  ctx.clearRect(0, 0, canvas.value.width, canvas.value.height)
+  if (!canvas.value) return;
+  
+  const ctx = canvas.value.getContext('2d');
+  ctx.clearRect(0, 0, canvas.value.width, canvas.value.height);
 
-  const f = surfaceType.value === 'gaussian' ? f_gaussian : f_sin
+  // Create a curried version of the selected function with its parameters
+  const f = (x, y) => selectedFunction.value.func(x, y, selectedFunction.value.params);
 
-  const cols = Math.floor(canvas.value.width / spacing.value)
-  const rows = Math.floor(canvas.value.height / spacing.value)
+  const cols = Math.floor(canvas.value.width / spacing.value);
+  const rows = Math.floor(canvas.value.height / spacing.value);
 
-  ctx.strokeStyle = '#000'
-  ctx.lineWidth = 1
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1;
 
+  // Draw horizontal lines
   for (let i = 0; i <= cols; i++) {
+    for (let j = 0; j < rows; j++) {
+      const x = i * spacing.value;
+      const y = j * spacing.value;
+      const [wx1, wy1] = warpPoint(x, y, f);
+      const [wx2, wy2] = warpPoint(x, y + spacing.value, f);
+      
+      ctx.beginPath();
+      ctx.moveTo(wx1, wy1);
+      ctx.lineTo(wx2, wy2);
+      ctx.stroke();
+    }
+  }
+
+  // Draw vertical lines
+  for (let i = 0; i < cols; i++) {
     for (let j = 0; j <= rows; j++) {
-      const x = i * spacing.value
-      const y = j * spacing.value
-      const [wx, wy] = warpPoint(x, y, f)
-
-      // horizontal edge
-      if (i < cols) {
-        const [wx2, wy2] = warpPoint(x + spacing.value, y, f)
-        ctx.beginPath()
-        ctx.moveTo(wx, wy)
-        ctx.lineTo(wx2, wy2)
-        ctx.stroke()
-      }
-
-      // vertical edge
-      if (j < rows) {
-        const [wx2, wy2] = warpPoint(x, y + spacing.value, f)
-        ctx.beginPath()
-        ctx.moveTo(wx, wy)
-        ctx.lineTo(wx2, wy2)
-        ctx.stroke()
-      }
+      const x = i * spacing.value;
+      const y = j * spacing.value;
+      const [wx1, wy1] = warpPoint(x, y, f);
+      const [wx2, wy2] = warpPoint(x + spacing.value, y, f);
+      
+      ctx.beginPath();
+      ctx.moveTo(wx1, wy1);
+      ctx.lineTo(wx2, wy2);
+      ctx.stroke();
     }
   }
 }
 
-onMounted(draw)
-watch([spacing, surfaceType, sinMultiplier, sinAmplitude, gaussianRadius, gaussianHeight, warpAlpha], draw)
+// Watch for changes to parameters and redraw
+watch([spacing, warpAlpha, warpPointEPS], () => {
+  draw();
+}, { immediate: true });
+
+// Initialize on mount
+onMounted(() => {
+  // Initial draw with default function
+  onFunctionUpdate(selectedFunction.value);
+});
 </script>
 
 <style scoped>
@@ -143,15 +154,56 @@ watch([spacing, surfaceType, sinMultiplier, sinAmplitude, gaussianRadius, gaussi
   align-items: center;
 }
 
+/* Make all form elements full width */
 .controls {
-  margin-top: 1em;
+  margin: 0.5em 0;
+  width: 100%;
+  max-width: 800px;
+  font-size: 0.85em;
 }
 
-label {
-  margin-right: 1em;
+.controls label {
+  display: block;
+  width: 100%;
+  margin: 0.3em 0;
 }
+
+.controls .v-slider {
+  width: 100%;
+  margin: 0.2em 0 0.5em;
+}
+
+.controls .v-select {
+  width: 100%;
+  margin: 0.2em 0 0.5em;
+}
+
+.controls .v-select .v-field {
+  --v-field-padding-top: 8px;
+  --v-field-padding-bottom: 8px;
+  min-height: 36px;
+}
+
+.controls .v-btn {
+  width: 100%;
+  margin: 0.5em 0;
+  height: 32px;
+}
+
+.controls .v-slider-thumb__label {
+  font-size: 0.8em;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 4px;
+}
+
+.controls .v-slider-thumb {
+  width: 14px;
+  height: 14px;
+}
+
 canvas {
   border: 1px solid #ccc;
-  margin-top: 1em;
+  margin-top: 0.5em;
 }
 </style>
