@@ -4,7 +4,7 @@
 
     <div class="controls">
       <v-row>
-        <v-col cols="12" sm="6" md="4">
+        <v-col cols="12" sm="6">
           <v-slider
             v-model="spacing"
             :min="1"
@@ -14,23 +14,13 @@
             thumb-label
           ></v-slider>
         </v-col>
-        <v-col cols="12" sm="6" md="4">
+        <v-col cols="12" sm="6">
           <v-slider
             v-model="warpAlpha"
-            :min="1"
-            :max="300"
-            :step="1"
+            :min="0.1"
+            :max="50"
+            :step="0.5"
             label="Warp Alpha"
-            thumb-label
-          ></v-slider>
-        </v-col>
-        <v-col cols="12" sm="6" md="4">
-          <v-slider
-            v-model="warpPointEPS"
-            :min="0.01"
-            :max="1"
-            :step="0.01"
-            label="Warp EPS"
             thumb-label
           ></v-slider>
         </v-col>
@@ -40,7 +30,7 @@
         v-model="selectedFunction"
         :function-key="selectedFunctionKey"
         @update:model-value="onFunctionUpdate"
-        class="mb-4"
+        class="mb-6"
       />
 
       <v-btn color="primary" @click="draw" block class="mt-2">Redraw</v-btn>
@@ -53,19 +43,19 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue';
 import FunctionSelector from './components/FunctionSelector.vue';
+import { useFunctionStore } from './store';
+import { functionDefinitions } from './functions';
+
+const store = useFunctionStore()
 
 // Canvas and grid settings
 const spacing = ref(30);
 const warpAlpha = ref(5);
-const warpPointEPS = ref(0.1);
 const canvas = ref(null);
 
 // Function selection and parameters
 const selectedFunctionKey = ref('sineRidge');
-const selectedFunction = ref({
-  func: (x, y) => 0,
-  params: {}
-});
+const selectedFunction = ref(store.selectedFunctionKey);
 
 // Update the function when selection or parameters change
 const onFunctionUpdate = (newFunction) => {
@@ -75,7 +65,7 @@ const onFunctionUpdate = (newFunction) => {
 
 // Numerical gradient calculation
 function grad_f(f, x, y, eps = null) {
-  const epsilon = eps || warpPointEPS.value;
+  const epsilon = eps || 0.1;
   const dx = (f(x + epsilon, y) - f(x - epsilon, y)) / (2 * epsilon);
   const dy = (f(x, y + epsilon) - f(x, y - epsilon)) / (2 * epsilon);
   return [dx, dy];
@@ -95,7 +85,7 @@ function draw() {
   ctx.clearRect(0, 0, canvas.value.width, canvas.value.height);
 
   // Create a curried version of the selected function with its parameters
-  const f = (x, y) => selectedFunction.value.func(x, y, selectedFunction.value.params);
+  const f = (x, y) => functionDefinitions[store.fnKey].func(x, y, store.fnParams)
 
   const cols = Math.floor(canvas.value.width / spacing.value);
   const rows = Math.floor(canvas.value.height / spacing.value);
@@ -135,7 +125,7 @@ function draw() {
 }
 
 // Watch for changes to parameters and redraw
-watch([spacing, warpAlpha, warpPointEPS], () => {
+watch([spacing, warpAlpha, () => store.fnKey, () => store.fnParams], () => {
   draw();
 }, { immediate: true });
 
