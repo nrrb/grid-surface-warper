@@ -289,15 +289,24 @@ const getFilename = () => {
 const saveCanvasAsPNG = () => {
   if (!canvas.value) return;
   
-  // Create a temporary link
+  // Create a temporary canvas with white background
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = canvas.value.width;
+  tempCanvas.height = canvas.value.height;
+  const tempCtx = tempCanvas.getContext('2d');
+  
+  // Fill with white background
+  tempCtx.fillStyle = 'white';
+  tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+  
+  // Draw the original canvas on top
+  tempCtx.drawImage(canvas.value, 0, 0);
+  
+  // Create download link
   const link = document.createElement('a');
   link.download = getFilename();
-  link.href = canvas.value.toDataURL('image/png');
-  
-  // Trigger download
-  document.body.appendChild(link);
+  link.href = tempCanvas.toDataURL('image/png');
   link.click();
-  document.body.removeChild(link);
 };
 
 // Initialize on mount
