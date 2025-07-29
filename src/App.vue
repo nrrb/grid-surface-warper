@@ -24,6 +24,15 @@
             thumb-label
           ></v-slider>
         </v-col>
+        <v-col>
+          <!-- Add a button that cycles through three states: square, tri, hex. This sets the grid that displays -->
+          <v-btn
+            color="primary"
+            @click="gridType = (gridType + 1) % 3"
+          >
+            {{ gridType === 0 ? 'Square' : gridType === 1 ? 'Tri' : 'Hex' }}
+          </v-btn>
+        </v-col>
       </v-row>
 
       <FunctionSelector
@@ -36,12 +45,19 @@
       <v-btn color="primary" @click="draw" block class="mt-2">Redraw</v-btn>
     </div>
 
-    <canvas ref="canvas" width="800" height="800" />
+    <canvas 
+      ref="canvas" 
+      width="800" 
+      height="800"
+      @click="saveCanvasAsPNG"
+      style="cursor: pointer;"
+      title="Click to save as PNG"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import FunctionSelector from './components/FunctionSelector.vue';
 import { useFunctionStore } from './store';
 import { functionDefinitions } from './functions';
@@ -52,6 +68,7 @@ const store = useFunctionStore()
 const spacing = ref(30);
 const warpAlpha = ref(5);
 const canvas = ref(null);
+const gridType = ref(0);
 
 // Function selection and parameters
 const selectedFunctionKey = ref('sineRidge');
@@ -77,62 +94,204 @@ function warpPoint(x, y, f) {
   return [x + warpAlpha.value * dx, y + warpAlpha.value * dy];
 }
 
-// Main drawing function
+// Draw the grid with the current function
 function draw() {
   if (!canvas.value) return;
   
   const ctx = canvas.value.getContext('2d');
+  if (!ctx) return;
+
+  // Clear canvas
   ctx.clearRect(0, 0, canvas.value.width, canvas.value.height);
 
+    // Grid generation functions
+  const generateTriangularGrid = (width, height, size) => {
+    const origin = { x: -size, y: -size };
+    const v1 = { x: size, y: 0 };
+    const v2 = { x: size / 2, y: size * Math.sqrt(3) / 2 };
+    const cols = Math.ceil(width / size) + 1;
+    const rows = Math.ceil(height * 2 / (size * Math.sqrt(3))) + 1;
+    let grid = [];
+    for (let i = -cols; i <= cols; i++) {
+      let row = [];
+      for (let j = 0; j <= rows; j++) {
+        const x = origin.x + i * v1.x + j * v2.x;
+        const y = origin.y + i * v1.y + j * v2.y;
+        row.push({ x, y });
+      }
+      grid.push(row);
+    }
+    return grid;
+  };
+
+  const getHexagonVertices = (center, size) => {
+    let vertices = [];
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 180) * (60 * i - 30);
+      vertices.push({
+        x: center.x + size * Math.cos(angle),
+        y: center.y + size * Math.sin(angle)
+      });
+    }
+    return vertices;
+  };
+
+  const generateHexagonalGrid = (width, height, size) => {
+    const origin = { x: -size, y: -size };
+    const v1 = { x: size * Math.sqrt(3), y: 0 };
+    const v2 = { x: size * Math.sqrt(3) / 2, y: size * 1.5 };
+    const cols = Math.ceil(width / (size * Math.sqrt(3))) + 1;
+    const rows = Math.ceil(height / (size * 1.5)) + 1;
+    let grid = [];
+    for (let i = -cols; i <= cols; i++) {
+      for (let j = -rows; j <= rows; j++) {
+        const x = origin.x + i * v1.x + j * v2.x;
+        const y = origin.y + i * v1.y + j * v2.y;
+        grid.push({ x, y });
+      }
+    }
+    return grid;
+  };
+
   // Create a curried version of the selected function with its parameters
-  const f = (x, y) => functionDefinitions[store.fnKey].func(x, y, store.fnParams)
+  const f = (x, y) => functionDefinitions[store.fnKey].func(x, y, store.fnParams);
 
-  const cols = Math.floor(canvas.value.width / spacing.value);
-  const rows = Math.floor(canvas.value.height / spacing.value);
+  const width = canvas.value.width;
+  const height = canvas.value.height;
+  const s = spacing.value;
 
-  ctx.strokeStyle = '#000';
+  ctx.beginPath();
+  ctx.strokeStyle = 'black';
   ctx.lineWidth = 1;
 
-  // Draw horizontal lines
-  for (let i = 0; i <= cols; i++) {
-    for (let j = 0; j < rows; j++) {
-      const x = i * spacing.value;
-      const y = j * spacing.value;
-      const [wx1, wy1] = warpPoint(x, y, f);
-      const [wx2, wy2] = warpPoint(x, y + spacing.value, f);
+  switch (gridType.value) {
+    case 0: // Square grid
+      // Draw vertical lines
+      for (let x = 0; x <= width; x += s) {
+        const [wx1, wy1] = warpPoint(x, 0, f);
+        const [wx2, wy2] = warpPoint(x, height, f);
+        
+        ctx.moveTo(wx1, wy1);
+        ctx.lineTo(wx2, wy2);
+      }
       
-      ctx.beginPath();
-      ctx.moveTo(wx1, wy1);
-      ctx.lineTo(wx2, wy2);
-      ctx.stroke();
-    }
-  }
+      // Draw horizontal lines
+      for (let y = 0; y <= height; y += s) {
+        const [wx1, wy1] = warpPoint(0, y, f);
+        const [wx2, wy2] = warpPoint(width, y, f);
+        
+        ctx.moveTo(wx1, wy1);
+        ctx.lineTo(wx2, wy2);
+      }
+      break;
 
-  // Draw vertical lines
-  for (let i = 0; i < cols; i++) {
-    for (let j = 0; j <= rows; j++) {
-      const x = i * spacing.value;
-      const y = j * spacing.value;
-      const [wx1, wy1] = warpPoint(x, y, f);
-      const [wx2, wy2] = warpPoint(x + spacing.value, y, f);
+    case 1: // Equilateral triangular grid
+      const triangleGrid = generateTriangularGrid(width, height, s);
       
-      ctx.beginPath();
-      ctx.moveTo(wx1, wy1);
-      ctx.lineTo(wx2, wy2);
-      ctx.stroke();
-    }
+      // Draw the triangular grid
+      for (let i = 0; i < triangleGrid.length - 1; i++) {
+        for (let j = 0; j < triangleGrid[i].length - 1; j++) {
+          const p1 = triangleGrid[i][j];
+          const p2 = triangleGrid[i + 1][j];
+          const p3 = triangleGrid[i][j + 1];
+          
+          // Warp the points
+          const [x1, y1] = warpPoint(p1.x, p1.y, f);
+          const [x2, y2] = warpPoint(p2.x, p2.y, f);
+          const [x3, y3] = warpPoint(p3.x, p3.y, f);
+          
+          // Draw the triangle
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.lineTo(x3, y3);
+          ctx.closePath();
+          ctx.stroke();
+          
+          // Draw the adjacent triangle to complete the grid
+          if (i < triangleGrid.length - 2 && j < triangleGrid[i].length - 2) {
+            const p4 = triangleGrid[i + 1][j + 1];
+            const [x4, y4] = warpPoint(p4.x, p4.y, f);
+            
+            ctx.beginPath();
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x3, y3);
+            ctx.lineTo(x4, y4);
+            ctx.closePath();
+            ctx.stroke();
+          }
+        }
+      }
+      break;
+
+    case 2: // Regular hexagonal grid
+      const hexGrid = generateHexagonalGrid(width, height, s);
+      
+      // Draw the hexagonal grid
+      hexGrid.forEach(center => {
+        const vertices = getHexagonVertices(center, s);
+        
+        // Warp the vertices
+        const warpedVertices = vertices.map(v => warpPoint(v.x, v.y, f));
+        
+        // Draw the hexagon
+        ctx.beginPath();
+        warpedVertices.forEach(([x, y], index) => {
+          if (index === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+      });
+      break;
   }
+  
+  ctx.stroke();
 }
 
 // Watch for changes to parameters and redraw
-watch([spacing, warpAlpha, () => store.fnKey, () => store.fnParams], () => {
+watch([spacing, warpAlpha, gridType, () => store.fnKey, () => store.fnParams], () => {
   draw();
 }, { immediate: true });
+
+// Generate a filename based on current function and parameters
+const getFilename = () => {
+  const now = new Date();
+  const dateStr = now.toISOString().split('T')[0];
+  const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+  
+  const funcName = store.fnKey;
+  const params = Object.entries(store.fnParams || {})
+    .map(([key, value]) => `${key}${Math.round(value * 100) / 100}`)
+    .join('_');
+    
+  return `grid_${funcName}_${params}_${dateStr}_${timeStr}.png`;
+};
+
+// Save canvas as PNG
+const saveCanvasAsPNG = () => {
+  if (!canvas.value) return;
+  
+  // Create a temporary link
+  const link = document.createElement('a');
+  link.download = getFilename();
+  link.href = canvas.value.toDataURL('image/png');
+  
+  // Trigger download
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
 
 // Initialize on mount
 onMounted(() => {
   // Initial draw with default function
   onFunctionUpdate(selectedFunction.value);
+  
+  // Add cursor style to indicate clickable
+  if (canvas.value) {
+    canvas.value.style.cursor = 'pointer';
+  }
 });
 </script>
 
