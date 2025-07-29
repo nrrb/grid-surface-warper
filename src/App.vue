@@ -47,17 +47,17 @@
 
     <canvas 
       ref="canvas" 
-      width="800" 
-      height="800"
+      :width="canvasSize.width" 
+      :height="canvasSize.height"
       @click="saveCanvasAsPNG"
-      style="cursor: pointer;"
+      style="cursor: pointer; max-width: 100%; height: auto;"
       title="Click to save as PNG"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue';
+import { ref, onMounted, watch, computed, onBeforeUnmount } from 'vue';
 import FunctionSelector from './components/FunctionSelector.vue';
 import { useFunctionStore } from './store';
 import { functionDefinitions } from './functions';
@@ -69,6 +69,23 @@ const spacing = ref(30);
 const warpAlpha = ref(5);
 const canvas = ref(null);
 const gridType = ref(0);
+const canvasSize = ref({ width: 800, height: 800 });
+
+// Handle window resize
+const handleResize = () => {
+  if (!canvas.value) return;
+  const container = canvas.value.parentElement;
+  const size = Math.min(container.clientWidth - 40, 800); // Max 800px or container width - padding
+  
+  canvasSize.value = {
+    width: size,
+    height: size // Keep it square
+  };
+  
+  // Redraw with new dimensions
+  draw();
+};
+
 
 // Function selection and parameters
 const selectedFunctionKey = ref('sineRidge');
@@ -285,6 +302,8 @@ const saveCanvasAsPNG = () => {
 
 // Initialize on mount
 onMounted(() => {
+  handleResize();
+  window.addEventListener('resize', handleResize);
   // Initial draw with default function
   onFunctionUpdate(selectedFunction.value);
   
@@ -292,6 +311,10 @@ onMounted(() => {
   if (canvas.value) {
     canvas.value.style.cursor = 'pointer';
   }
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize);
 });
 </script>
 
